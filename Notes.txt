@@ -1,0 +1,52 @@
+1. The test is failing because the number of elements consumed is not the same as the number produced.
+    Looking at the code, I believe that this is because of two main reasons:
+
+    A. The queue is not protected by a mutex. 
+        This could lead to data races.
+
+    B. The consume function may be exiting early. 
+        I have a suspicion that it is not tracking "done" correctly. 
+
+2. When uncommenting Line A, we can see when the Customers begin to wait. 
+
+3. The condition variable should be passed by REFERENCE, not by value.
+    If we pass by value, we are effectively manipulating a copy of the original. 
+    We want to modify the element for the program as a whole, not just locally. 
+
+4. I may have skipped some steps here- I was able to get the code to pass after a few iterations of my changes.
+
+Here is a breakdown of my thought process and what I changed: 
+
+
+1. Condition Variable Introduction:
+    The instructions had me use one! The busy-waiting approach is also terrible. 
+    By introducing the condition variable, consumer threads can be notifed when they have "work" and can therefore be more effecient.
+
+2. Changes within the "produce" function:
+
+    (Here is where we start using our condition variable, "cv".)
+    -Added cv as an argument, passed by reference
+    -Wrapped the queue.push code in a lock guard so as to protect it with the queue_mutex.
+        ~This should help the data race issue I identified in step one.
+    -Utilized the cv notify function after pushing to the queue.
+        ~This should prevent the busy-waiting process. By using cv, I can let consumers know when there is product, rather than busy-waiting for it.
+    
+3. Changes within the "consume" function:
+    (cv part two!)
+    -Added cv as an argument, passed by reference
+
+    -Replaced the busy-waiting loop with cv functionality 
+        ~cv.wait() to wait until producer notifies it that there is new product to consume.
+        ~This is locked within unique_lock which waits until there is a new item in the queue or it sees that it is "done"
+
+    -Created a new done variable locally!
+
+        ~This implementation I may change if I have more time tomorrow to work on this, as I feel that it isn't a best practice. 
+        ~The local done variable ensures that the consumer loop will not break until BOTH the done flag is set AND the queue is empty.
+
+4. Test Case Changes:
+    (This maybe should be first on the list but hopefully having this open on the side makes reading the code easier.)
+
+    - Created a condition variable cv before starting the producer and consumer threads.
+    - Passed the condition variable cv as an argument to the producer and consumer threads.
+    - Called cv.notify_all() after setting the done flag to true, ensuring that all waiting consumers are notified.
