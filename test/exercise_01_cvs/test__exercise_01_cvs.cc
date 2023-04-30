@@ -55,31 +55,30 @@ void consume(
     std::queue<size_t> &queue,
     std::mutex &queue_mutex,
     std::atomic_bool &done,
-    std::atomic_size_t &num_consumed)
-{
-  while (!done)
-  {
-    unique_lock<std::mutex> lk(queue_mutex);
-    cv.wait(lk, [&queue, &done]
-            { return !queue.empty() || done; });
-
-    if (!queue.empty())
+    std::atomic_size_t &num_consumed) {
+  bool local_done = false;
+  while (!local_done) {
+    size_t msec;
     {
-      size_t msec = queue.front();
-      queue.pop();
-      lk.unlock();
+      unique_lock<std::mutex> lk(queue_mutex);
+      cv.wait(lk, [&queue, &done] { return !queue.empty() || done.load(); });
 
-      {
-        lock_guard lg(cout_mutex);
-        cout << "C" << id << ": popped " << msec << endl;
-        cout << "C" << id << ": working..." << endl;
+      if (!queue.empty()) {
+        msec = queue.front();
+        queue.pop();
+        lk.unlock();
+
+        {
+          lock_guard lg(cout_mutex);
+          cout << "C" << id << ": popped " << msec << endl;
+          cout << "C" << id << ": working..." << endl;
+        }
+        this_thread::sleep_for(chrono::milliseconds(msec));
+        num_consumed++;
+      } else {
+        local_done = done.load();
+        lk.unlock();
       }
-      this_thread::sleep_for(chrono::milliseconds(msec));
-      num_consumed++;
-    }
-    else
-    {
-      lk.unlock();
     }
   }
 
@@ -88,6 +87,7 @@ void consume(
     cout << "C" << id << ": exiting..." << endl;
   }
 }
+
 
 TEST_CASE("producer/consumer example")
 {
